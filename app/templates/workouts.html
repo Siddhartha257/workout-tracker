@@ -1,0 +1,333 @@
+<!DOCTYPE html>
+<html lang="en" data-bs-theme="dark">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Workout Tracker</title>
+  <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.7/dist/css/bootstrap.min.css" rel="stylesheet" crossorigin="anonymous" />
+  <style>
+    body {
+      background-color: #0d0d0d;
+      color: #fff;
+      font-family: 'Segoe UI', sans-serif;
+      overflow: auto;
+    }
+
+    .container-3col {
+      display: flex;
+      gap: 20px;
+      padding: 24px;
+      height: 99vh;
+    }
+
+    .panel {
+      flex: 1;
+      background-color: #1a1a2a;
+      padding: 20px;
+      border-radius: 12px;
+      box-shadow: 0 8px 24px rgba(0, 0, 0, 0.4);
+      display: flex;
+      flex-direction: column;
+      overflow-y: auto;
+    }
+
+    .panel h2 {
+      font-size: 1.25rem;
+      color: #66c0f4;
+      margin-bottom: 16px;
+      border-bottom: 1px solid #333;
+      padding-bottom: 8px;
+    }
+
+    .form-control, .form-select {
+      background-color: #111;
+      color: #fff;
+      border: 1px solid #333;
+    }
+
+    .form-control:focus, .form-select:focus {
+      border-color: #66c0f4;
+      box-shadow: 0 0 0 0.2rem rgba(102, 192, 244, 0.25);
+    }
+
+    .set-row {
+      display: flex;
+      gap: 10px;
+      margin-bottom: 12px;
+      align-items: center;
+    }
+
+    .btn-outline-danger:hover { background-color: rgba(255, 0, 0, 0.15); }
+    .btn-outline-secondary:hover { background-color: rgba(255, 255, 255, 0.08); }
+    .btn-outline-info:hover { background-color: rgba(102, 192, 244, 0.1); }
+
+    .card-dark {
+      background-color: #222;
+      border: 1px solid #333;
+      border-radius: 8px;
+    }
+
+    .card-dark ul {
+      padding-left: 1.2rem;
+      margin-top: 8px;
+    }
+
+    .card-dark li {
+      margin-bottom: 6px;
+    }
+
+    .card-dark p {
+      margin-bottom: 10px;
+    }
+
+    .muscle-section h6 {
+      color: #f4c766;
+      margin-top: 16px;
+    }
+
+    .history-content {
+      overflow-y: auto;
+      flex-grow: 1;
+      padding-right: 4px;
+    }
+
+    .ai-result {
+      overflow-y: auto;
+      flex-grow: 1;
+      margin-bottom: 12px;
+    }
+
+    .ai-footer {
+      border-top: 1px solid #333;
+      padding-top: 12px;
+    }
+
+    @media screen and (max-width: 992px) {
+      .container-3col {
+        flex-direction: column;
+        height: auto;
+      }
+    }
+  </style>
+</head>
+<body>
+
+<!-- 🔳 3-Column Layout -->
+<div class="container-3col">
+
+  <!-- 👉 Workout Input Panel -->
+  <div class="panel" id="input-panel">
+    <h2>🏋️ Workout Input</h2>
+    <form id="workout-form" class="row g-3">
+      <input type="hidden" id="edit-id" />
+      <div class="col-12">
+        <label class="form-label">Muscle Group</label>
+        <select class="form-select" id="muscle-group" required>
+          <option value="" disabled selected>Select</option>
+          <option>Chest</option><option>Back</option><option>Legs</option>
+          <option>Shoulders</option><option>Biceps</option>
+          <option>Triceps</option><option>Abs</option><option>Cardio</option>
+        </select>
+      </div>
+      <div class="col-12">
+        <label class="form-label">Workout Type</label>
+        <input type="text" class="form-control" id="workout-type" required />
+      </div>
+      <div class="col-12">
+        <label class="form-label">Sets</label>
+        <div id="sets-container"></div>
+        <div class="d-grid mt-2">
+          <button class="btn btn-outline-secondary" type="button" onclick="addSet()">➕ Add Set</button>
+        </div>
+      </div>
+      <div class="col-12">
+        <label class="form-label">Date</label>
+        <input type="date" class="form-control" id="workout-date" required />
+      </div>
+      <div class="col-12">
+        <label class="form-label">Notes</label>
+        <textarea class="form-control" id="notes" rows="2"></textarea>
+      </div>
+      <div class="col-12 mt-3">
+        <button type="submit" class="btn btn-primary w-100" id="submit-btn">Submit Workout</button>
+      </div>
+    </form>
+  </div>
+
+  <!-- 📅 Workout History Panel -->
+  <div class="panel history-panel">
+    <h2>📅 Workout History</h2>
+    <div class="history-content" id="workout-history"></div>
+  </div>
+
+  <!-- 🤖 AI Suggestions Panel -->
+  <div class="panel ai-panel d-flex flex-column">
+    <h2>🤖 AI Suggestions</h2>
+    <div class="ai-result" id="ai-suggestions">
+      <div class="text-muted">Click the button below to get suggestions.</div>
+    </div>
+    <div class="ai-footer mt-auto">
+      <div class="d-grid">
+        <button class="btn btn-outline-info btn-sm" onclick="loadAISuggestions()">🔄 Generate AI Suggestion</button>
+      </div>
+    </div>
+  </div>
+
+</div>
+
+<!-- 🧠 JavaScript -->
+<script>
+  function addSet(reps = "", weight = "") {
+    const row = document.createElement("div");
+    row.className = "set-row";
+    row.innerHTML = `
+      <input type="text" class="form-control" placeholder="Reps" value="${reps}" required />
+      <input type="text" class="form-control" placeholder="Weight" value="${weight}" required />
+      <button class="btn btn-outline-danger" type="button" onclick="removeSet(this)">🗑️</button>
+    `;
+    document.getElementById("sets-container").appendChild(row);
+  }
+
+  function removeSet(button) {
+    button.parentElement.remove();
+  }
+
+  async function deleteWorkout(id) {
+    if (!confirm("Delete this workout?")) return;
+    await fetch(`http://localhost:8000/workout/${id}`, { method: "DELETE" });
+    loadHistory();
+  }
+
+  function editWorkout(id) {
+    fetch(`http://localhost:8000/workout/${id}`)
+      .then((res) => res.json())
+      .then((w) => {
+        document.getElementById("edit-id").value = w.id;
+        document.getElementById("muscle-group").value = w.muscle_group;
+        document.getElementById("workout-type").value = w.workout_type;
+        document.getElementById("workout-date").value = w.date;
+        document.getElementById("notes").value = w.notes || "";
+        document.getElementById("sets-container").innerHTML = "";
+        w.sets.forEach((s) => addSet(s.reps, s.weight));
+        document.getElementById("submit-btn").textContent = "Update Workout";
+      });
+  }
+
+  document.addEventListener("DOMContentLoaded", () => {
+    document.getElementById("workout-date").value = new Date().toISOString().split("T")[0];
+    addSet();
+    loadHistory();
+
+    document.getElementById("workout-form").addEventListener("submit", async (e) => {
+      e.preventDefault();
+      const id = document.getElementById("edit-id").value;
+      const sets = [...document.querySelectorAll("#sets-container .set-row")].map((row) => ({
+        reps: row.querySelectorAll("input")[0].value.trim(),
+        weight: row.querySelectorAll("input")[1].value.trim()
+      }));
+
+      const payload = {
+        muscle_group: document.getElementById("muscle-group").value,
+        workout_type: document.getElementById("workout-type").value,
+        date: document.getElementById("workout-date").value,
+        notes: document.getElementById("notes").value,
+        sets
+      };
+
+      const method = id ? "PUT" : "POST";
+      const url = id ? `http://localhost:8000/workout/${id}` : "http://localhost:8000/workout";
+      await fetch(url, {
+        method,
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payload)
+      });
+
+      document.getElementById("edit-id").value = "";
+      document.getElementById("submit-btn").textContent = "Submit Workout";
+      document.getElementById("workout-form").reset();
+      document.getElementById("sets-container").innerHTML = "";
+      addSet();
+      loadHistory();
+    });
+  });
+
+  async function loadHistory() {
+    const container = document.getElementById("workout-history");
+    const res = await fetch("http://localhost:8000/workouts");
+    const result = await res.json();
+    container.innerHTML = "";
+
+    Object.entries(result).sort((a, b) => new Date(b[0]) - new Date(a[0])).forEach(([date, groups]) => {
+      const dateDiv = document.createElement("div");
+      dateDiv.innerHTML = `<h5 class="mt-3">${date}</h5>`;
+      Object.entries(groups).forEach(([muscle, workouts]) => {
+        const muscleDiv = document.createElement("div");
+        muscleDiv.className = "muscle-section";
+        muscleDiv.innerHTML = `<h6>${muscle}</h6>`;
+        workouts.forEach((w) => {
+          const card = document.createElement("div");
+          card.className = "card p-3 mb-2 card-dark";
+          card.innerHTML = `
+            <div class='d-flex justify-content-between align-items-center'>
+              <div><strong>${w.muscle_group}</strong> - ${w.workout_type}</div>
+              <div>
+                <button class='btn btn-sm btn-outline-warning me-1' onclick="editWorkout(${w.id})">✏️</button>
+                <button class='btn btn-sm btn-outline-danger' onclick="deleteWorkout(${w.id})">🗑️</button>
+              </div>
+            </div>
+            <ul>${w.sets.map((s) => `<li>${s.reps} reps @ ${s.weight}</li>`).join("")}</ul>
+            ${w.notes ? `<p class="mt-2"><em>${w.notes}</em></p>` : ""}
+          `;
+          muscleDiv.appendChild(card);
+        });
+        dateDiv.appendChild(muscleDiv);
+      });
+      container.appendChild(dateDiv);
+    });
+  }
+
+  // ✅ Format raw text from Gemini into clean HTML
+  async function loadAISuggestions() {
+    const box = document.getElementById("ai-suggestions");
+    box.innerHTML = "<div class='text-muted'>Fetching AI suggestions...</div>";
+
+    try {
+      const res = await fetch("http://localhost:8000/ai-suggestions");
+      const data = await res.json();
+
+      if (data.suggestion) {
+        const lines = data.suggestion.split("\n").filter(line => line.trim());
+        let html = `<div class="card p-3 card-dark"><h6 class="mb-2 text-info">💡 Tips & Recommendations</h6>`;
+        let isListOpen = false;
+
+        lines.forEach(line => {
+          if (line.startsWith("-") || line.startsWith("•")) {
+            if (!isListOpen) {
+              html += "<ul>";
+              isListOpen = true;
+            }
+            html += `<li>${line.replace(/^[-•]\s*/, '')}</li>`;
+          } else {
+            if (isListOpen) {
+              html += "</ul>";
+              isListOpen = false;
+            }
+            html += `<p>${line}</p>`;
+          }
+        });
+
+        if (isListOpen) html += "</ul>";
+        html += "</div>";
+        box.innerHTML = html;
+      } else {
+        box.innerHTML = "<div class='text-muted'>No suggestions available.</div>";
+      }
+    } catch (e) {
+      box.innerHTML = `<div class="text-danger">❌ Failed to load suggestions</div>`;
+      console.error("AI suggestion error", e);
+    }
+  }
+</script>
+<script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.7/dist/js/bootstrap.bundle.min.js" crossorigin="anonymous"></script>
+</body>
+</html>
