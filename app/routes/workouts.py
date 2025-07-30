@@ -200,3 +200,5 @@ async def get_ai_suggestions(user_id: int = Query(...), db: Session = Depends(ge
     except Exception as e:
         print(f"Gemini API error: {e}")
         raise HTTPException(status_code=500, detail=f"Gemini API error: {str(e)}")
+
+
