@@ -12,10 +12,10 @@ import google.generativeai as genai
 diet_router = APIRouter()
 
 # External APIs
-DIET_API_KEY = "af60yyFJgzAp1xK2X7oclg==Fjex2feiZOS31cZU"
+DIET_API_KEY = ""
 api_url = 'https://api.calorieninjas.com/v1/nutrition?query='
 
-GEMINI_API_KEY = "AIzaSyD4XzFyaNaITSUiGlhuQAYYCRFVtpGku3I"
+GEMINI_API_KEY = ""
 genai.configure(api_key=GEMINI_API_KEY)
 gemini_model = genai.GenerativeModel("gemini-1.5-flash")
 
