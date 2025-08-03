@@ -73,7 +73,7 @@ fitness_tracker/
 │   │   ├── signup.html     # User registration page
 │   │   ├── workouts.html   # Workout tracking interface
 │   │   └── diet.html       # Diet tracking interface
-│   └── workouts.db         # SQLite database
+│   └── workouts.db         # SQLAlchemy database
 ├── requirements.txt         # Python dependencies
 └── README.md              # This file
 ```
@@ -158,26 +158,3 @@ uvicorn main:app --reload --host 0.0.0.0 --port 8000
 - `SECRET_KEY`: JWT secret key (change in production)
 - `DATABASE_URL`: Database connection string
 - `GEMINI_API_KEY`: Google Gemini API key for AI features
-
-### Database
-The application uses SQLite by default. For production, consider using PostgreSQL or MySQL.
-
-## 🤝 Contributing
-
-1. Fork the repository
-2. Create a feature branch
-3. Make your changes
-4. Add tests if applicable
-5. Submit a pull request
-
-## 📝 License
-
-This project is licensed under the MIT License.
-
-## 🆘 Support
-
-For support or questions, please open an issue in the repository.
-
----
-
-**Note**: This application is for educational and personal use. For production deployment, ensure proper security measures are implemented. 
