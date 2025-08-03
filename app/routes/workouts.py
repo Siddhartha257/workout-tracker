@@ -10,7 +10,7 @@ from routes.user import get_current_user
 import google.generativeai as genai
 
 # 🚨 Replace this with your actual key from https://makersuite.google.com/app
-GEMINI_API_KEY = "AIzaSyD4XzFyaNaITSUiGlhuQAYYCRFVtpGku3I"
+GEMINI_API_KEY = ""
 genai.configure(api_key=GEMINI_API_KEY)
 gemini_model = genai.GenerativeModel("gemini-1.5-flash")
 
