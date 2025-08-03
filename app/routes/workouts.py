@@ -5,20 +5,18 @@ from pydantic import BaseModel
 from sqlalchemy.orm import Session
 from datetime import datetime
 from routes.db import get_db, Workout as DBWorkout, Set as DBSet, Users as DBUsers
+from routes.user import get_current_user
 # Gemini (Google Generative AI)
 import google.generativeai as genai
 
-
-
-
 # 🚨 Replace this with your actual key from https://makersuite.google.com/app
-GEMINI_API_KEY = ""
+GEMINI_API_KEY = "AIzaSyD4XzFyaNaITSUiGlhuQAYYCRFVtpGku3I"
 genai.configure(api_key=GEMINI_API_KEY)
 gemini_model = genai.GenerativeModel("gemini-1.5-flash")
 
 router = APIRouter()
 
-# Pydantic Models
+# === Pydantic Models ===
 class SetDetails(BaseModel):
     reps: str
     weight: str
@@ -27,7 +25,7 @@ class WorkoutCreate(BaseModel):
     muscle_group: str
     workout_type: str
     sets: List[SetDetails]
-    date: str  # YYYY-MM-DD
+    date: str  # Format: YYYY-MM-DD
     notes: str = ""
 
 class WorkoutResponse(WorkoutCreate):
@@ -36,17 +34,13 @@ class WorkoutResponse(WorkoutCreate):
     class Config:
         from_attributes = True
 
-# Create Workout for a User
+# === Create Workout ===
 @router.post("/workout", response_model=dict)
 def create_workout(
     workout: WorkoutCreate,
-    user_id: int = Query(..., description="User ID"),
+    current_user: DBUsers = Depends(get_current_user),
     db: Session = Depends(get_db)
 ):
-    user = db.query(DBUsers).filter(DBUsers.id == user_id).first()
-    if not user:
-        raise HTTPException(status_code=404, detail="User not found")
-
     try:
         workout_date = datetime.strptime(workout.date, "%Y-%m-%d")
     except ValueError:
@@ -57,7 +51,7 @@ def create_workout(
         workout_type=workout.workout_type,
         date=workout_date,
         notes=workout.notes,
-        user_id=user_id,
+        user_id=current_user.id,
         sets=[DBSet(reps=s.reps, weight=s.weight) for s in workout.sets]
     )
     db.add(db_workout)
@@ -65,10 +59,10 @@ def create_workout(
     db.refresh(db_workout)
     return {"message": "Workout added", "workout_id": db_workout.id}
 
-# Get Workouts Grouped by User
+# === Get Workouts Grouped by Date ===
 @router.get("/workouts", response_model=Dict[str, List[WorkoutResponse]])
-def get_user_workouts(user_id: int, db: Session = Depends(get_db)):
-    workouts = db.query(DBWorkout).filter(DBWorkout.user_id == user_id).all()
+def get_user_workouts(current_user: DBUsers = Depends(get_current_user), db: Session = Depends(get_db)):
+    workouts = db.query(DBWorkout).filter(DBWorkout.user_id == current_user.id).all()
     if not workouts:
         return {}
 
@@ -87,10 +81,17 @@ def get_user_workouts(user_id: int, db: Session = Depends(get_db)):
         grouped.setdefault(date_str, []).append(wr)
     return grouped
 
-# Get a single workout
+# === Get Workout by ID ===
 @router.get("/workout/{workout_id}", response_model=WorkoutResponse)
-def get_workout_by_id(workout_id: int, db: Session = Depends(get_db)):
-    workout = db.query(DBWorkout).filter(DBWorkout.id == workout_id).first()
+def get_workout_by_id(
+    workout_id: int, 
+    current_user: DBUsers = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    workout = db.query(DBWorkout).filter(
+        DBWorkout.id == workout_id,
+        DBWorkout.user_id == current_user.id
+    ).first()
     if not workout:
         raise HTTPException(status_code=404, detail="Workout not found")
     
@@ -99,106 +100,134 @@ def get_workout_by_id(workout_id: int, db: Session = Depends(get_db)):
         id=workout.id,
         muscle_group=workout.muscle_group,
         workout_type=workout.workout_type,
-        sets=sets,
         date=workout.date.strftime("%Y-%m-%d"),
-        notes=workout.notes
+        notes=workout.notes,
+        sets=sets
     )
 
-# Update workout
+# === Update Workout ===
 @router.put("/workout/{workout_id}")
 def update_workout(
     workout_id: int,
     updated: WorkoutCreate,
+    current_user: DBUsers = Depends(get_current_user),
     db: Session = Depends(get_db)
 ):
-    workout = db.query(DBWorkout).filter(DBWorkout.id == workout_id).first()
+    workout = db.query(DBWorkout).filter(
+        DBWorkout.id == workout_id,
+        DBWorkout.user_id == current_user.id
+    ).first()
     if not workout:
         raise HTTPException(status_code=404, detail="Workout not found")
-
-    workout.muscle_group = updated.muscle_group
-    workout.workout_type = updated.workout_type
-    workout.date = datetime.strptime(updated.date, "%Y-%m-%d")
-    workout.notes = updated.notes
-    workout.sets.clear()
-    workout.sets = [DBSet(reps=s.reps, weight=s.weight) for s in updated.sets]
-    db.commit()
-    return {"message": "Workout updated"}
-
-# Delete workout
-@router.delete("/workout/{workout_id}")
-def delete_workout(workout_id: int, db: Session = Depends(get_db)):
-    workout = db.query(DBWorkout).filter(DBWorkout.id == workout_id).first()
-    if not workout:
-        raise HTTPException(status_code=404, detail="Workout not found")
-    db.delete(workout)
-    db.commit()
-    return {"message": "Workout deleted"}
-
-@router.get("/ai-suggestions")
-async def get_ai_suggestions(user_id: int = Query(...), db: Session = Depends(get_db)):
-    user = db.query(DBUsers).filter(DBUsers.id == user_id).first()
-    if not user:
-        raise HTTPException(status_code=404, detail="User not found")
-
-    workouts = (
-        db.query(DBWorkout)
-        .filter(DBWorkout.user_id == user_id)
-        .order_by(DBWorkout.date.desc())
-        .limit(7)
-        .all()
-    )
-
-    if not workouts:
-        return {"suggestion": "Workout history is empty."}
-
-    history_lines = []
-    for w in workouts:
-        if not w.sets:
-            continue
-        sets_summary = ", ".join([f"{s.reps}@{s.weight}" for s in w.sets])
-        history_lines.append(f"{w.date.strftime('%Y-%m-%d')}: {w.muscle_group} - {w.workout_type} ({sets_summary})")
-
-    today_workout = workouts[0]
-    today_sets_summary = ", ".join([f"{s.reps}@{s.weight}" for s in today_workout.sets]) if today_workout.sets else "No sets logged"
-    today_summary = (
-        f"{today_workout.date.strftime('%Y-%m-%d')}: {today_workout.muscle_group} - "
-        f"{today_workout.workout_type} ({today_sets_summary})"
-    )
-
-    user_info = (
-        f"User Profile:\n"
-        f"- Gender: {user.gender}\n"
-        f"- Age: {user.age}\n"
-        f"- Height: {user.height} cm\n"
-        f"- Weight: {user.weight} kg\n"
-        f"- Target Weight: {user.target_weight} kg\n"
-        f"- Activity Level: {user.activity_level}\n"
-    )
-
-    prompt = (
-        f"You are a world-class personal trainer AI.\n"
-        f"{user_info}\n"
-        f"Today's Workout:\n{today_summary}\n\n"
-        f"Recent Workout History (excluding today):\n" + "\n".join(history_lines[1:]) + "\n\n"
-        "Instructions:\n"
-        "- Review today's workout first. Check if all muscle parts were properly hit (e.g., all 3 heads of the deltoid)."
-        " If the coverage is partial, list specific missing parts and exercises to fix it:\n"
-        "  Then give 2–3 brutally honest observations from workout history (e.g., imbalance, bad variety, repetitive muscle use).\n"
-        " suggest what workout he did and which part of muscle group is activated by that and suggest workouts for missing parts (e.g., if he did only incline bench press, suggest flat bench press for lower chest).\n"
-        " sample output:(incline bench press : upper chest \n flat bench press : lower chest(new workouts)) in bullet points with no limits\n"
-        "  Only the last 2 bullet points should talk about:\n"
-        "   1. Next day's suggested muscle group and exercise order\n"
-        "   2. Weekly split based on past workouts\n"
-        "-  Use exactly 8-9 bullet points. No fluff. No paragraphs\n"
-        "- - Output must be raw, blunt, and short — act like a coach who doesn’t sugarcoat\n"
-        "Return only bullet points. Avoid nutrition/sleep advice.\n"
-    )
 
     try:
-        response = await run_in_threadpool(gemini_model.generate_content, prompt)
-        return {"suggestion": response.text.strip()}
+        workout_date = datetime.strptime(updated.date, "%Y-%m-%d")
+    except ValueError:
+        raise HTTPException(status_code=400, detail="Invalid date format. Use YYYY-MM-DD.")
+
+    # Update workout details
+    workout.muscle_group = updated.muscle_group
+    workout.workout_type = updated.workout_type
+    workout.date = workout_date
+    workout.notes = updated.notes
+
+    # Clear existing sets and add new ones
+    db.query(DBSet).filter(DBSet.workout_id == workout_id).delete()
+    workout.sets = [DBSet(reps=s.reps, weight=s.weight) for s in updated.sets]
+
+    db.commit()
+    return {"message": "Workout updated successfully"}
+
+# === Delete Workout ===
+@router.delete("/workout/{workout_id}")
+def delete_workout(
+    workout_id: int,
+    current_user: DBUsers = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    workout = db.query(DBWorkout).filter(
+        DBWorkout.id == workout_id,
+        DBWorkout.user_id == current_user.id
+    ).first()
+    if not workout:
+        raise HTTPException(status_code=404, detail="Workout not found")
+
+    db.delete(workout)
+    db.commit()
+    return {"message": "Workout deleted successfully"}
+
+# === AI Suggestions ===
+@router.get("/ai-suggestions")
+async def get_ai_suggestions(
+    current_user: DBUsers = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    # Get user's recent workouts
+    recent_workouts = db.query(DBWorkout).filter(
+        DBWorkout.user_id == current_user.id
+    ).order_by(DBWorkout.date.desc()).limit(5).all()
+
+    if not recent_workouts:
+        return {"suggestions": "No workout history found. Start with basic exercises like push-ups, squats, and planks."}
+
+    # Create context for AI
+    workout_history = []
+    for workout in recent_workouts:
+        workout_history.append(f"{workout.muscle_group}: {workout.workout_type} : {workout.date.strftime('%Y-%m-%d')}")
+
+    prompt = f"""
+You are a bold and strict personal fitness coach.
+
+User Profile:
+- Age: {current_user.age}
+- Gender: {current_user.gender}
+- Current Weight: {current_user.weight}
+- Target Weight: {current_user.target_weight}
+- Activity Level: {current_user.activity_level}
+
+Workout History (last 7 days):
+{', '.join(workout_history)}
+
+Analyze the user’s profile and past 7-day workout history. Return output only in the following strict structure:
+
+1. What You Did Right
+-consider only today's workout(highest date).
+-be professional and direct(about parts of muscle groups).
+- List specific things the user did well (e.g., consistent training, good push/pull ratio).
+
+2. Muscle Group Status 
+- consider only today's workout(highest date).
+- Clearly state which parts of today's muscle group are overtrained, undertrained, or skipped.
+-talk about todays muscle group only(eg  if user did back and biceps talk about that).
+- Give direct correction advice to restore balance.
+
+3. Today's Workout Plan  
+- Mention exact muscle groups to target.  
+- List 6–9 exercises (grouped by muscle), each with sets, reps, rest time.  
+- Prioritize compound lifts and balance across upper/lower/core.  
+- Use raw bullet points. Be firm.
+- If user did back , suggest back and biceps workout.
+
+4. What You Did Wrong  
+- Call out mistakes bluntly. No sugarcoating.  
+- Mention overuse, neglect, lack of variation, poor recovery, etc.
+
+5. Tomorrow's Workout Plan  
+- Recommend which muscle groups to focus on based on today's session and missed areas.
+
+6. Weekly Split Suggestion  
+- Suggest a split based on user goals and history.  
+- Include rest and active recovery days.
+
+Be raw, bold, and strict. No emojis, no markdown symbols, no decoration. Only give results — no motivation or praise. Keep it all business.
+"""
+
+
+
+    try:
+        response = await run_in_threadpool(
+            lambda: gemini_model.generate_content(prompt)
+        )
+        return {"suggestions": response.text}
     except Exception as e:
-        print(f"Gemini API error: {e}")
-        raise HTTPException(status_code=500, detail=f"Gemini API error: {str(e)}")
-
-
+        return {"suggestions": f"Unable to generate suggestions: {str(e)}"}
